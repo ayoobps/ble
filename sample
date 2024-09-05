@@ -1,0 +1,162 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_blue/flutter_blue.dart';
+import 'package:app_settings/app_settings.dart';
+
+void main() => runApp(MyApp());
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Bluetooth Control App',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: BluetoothControlScreen(),
+    );
+  }
+}
+
+class BluetoothControlScreen extends StatefulWidget {
+  @override
+  _BluetoothControlScreenState createState() => _BluetoothControlScreenState();
+}
+
+class _BluetoothControlScreenState extends State<BluetoothControlScreen> {
+  FlutterBlue flutterBlue = FlutterBlue.instance;
+  List<BluetoothDevice> pairedDevices = [];
+  BluetoothDevice? connectedDevice;
+  bool isDeviceConnected = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _getPairedDevices();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Bluetooth Control App'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ElevatedButton(
+              onPressed: _checkBluetoothAndConnectToDevice,
+              child: Text('Connect to Paired Device'),
+            ),
+            SizedBox(height: 20),
+            if (connectedDevice != null && isDeviceConnected) ...[
+              ElevatedButton(
+                onPressed: () => _sendCommandToDevice('DEVICE_ON'),
+                child: Text('Turn Device ON'),
+              ),
+              ElevatedButton(
+                onPressed: () => _sendCommandToDevice('DEVICE_OFF'),
+                child: Text('Turn Device OFF'),
+              ),
+            ]
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _getPairedDevices() async {
+    try {
+      // Get the list of connected devices
+      List<BluetoothDevice> devices = await flutterBlue.connectedDevices;
+
+      // Add connected devices to the list
+      setState(() {
+        pairedDevices = devices;
+      });
+
+      // Get known devices (if any)
+      flutterBlue.connectedDevices.then((List<BluetoothDevice> devices) {
+        setState(() {
+          pairedDevices.addAll(devices);
+        });
+      });
+    } catch (e) {
+      print('Error getting paired devices: $e');
+    }
+  }
+
+  Future<void> _checkBluetoothAndConnectToDevice() async {
+    // Check if Bluetooth is enabled
+    if (!(await flutterBlue.isOn)) {
+      _showBluetoothSettings();
+      return;
+    }
+
+    // Attempt to connect to the first paired device
+    if (pairedDevices.isNotEmpty) {
+      _connectToDevice(pairedDevices.first);
+    } else {
+      print('No paired devices found.');
+    }
+  }
+
+  void _showBluetoothSettings() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Bluetooth Disabled'),
+        content: Text('Please enable Bluetooth to connect to a device.'),
+        actions: [
+          TextButton(
+            onPressed: () => AppSettings.openBluetoothSettings(),
+            child: Text('Open Bluetooth Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _connectToDevice(BluetoothDevice device) async {
+    try {
+      // Connect to the selected paired device
+      await device.connect();
+      setState(() {
+        connectedDevice = device;
+        isDeviceConnected = true;
+      });
+      print('Connected to ${device.name}');
+    } catch (e) {
+      print('Error connecting to device: $e');
+    }
+  }
+
+  Future<void> _sendCommandToDevice(String command) async {
+    if (connectedDevice != null) {
+      try {
+        // Here you'd typically discover services and send a command
+        print('Sending command $command to ${connectedDevice!.name}');
+        
+        // Discover services
+        List<BluetoothService> services = await connectedDevice!.discoverServices();
+        services.forEach((service) {
+          // Find the correct characteristic to write the command
+          var characteristics = service.characteristics;
+          for (BluetoothCharacteristic c in characteristics) {
+            if (c.properties.write) {
+              c.write(command.codeUnits);  // Sending the command as bytes
+              print('Command $command sent to device');
+            }
+          }
+        });
+      } catch (e) {
+        print('Error sending command: $e');
+      }
+    } else {
+      print('No device connected.');
+    }
+  }
+}
+<uses-permission android:name="android.permission.BLUETOOTH" />
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
